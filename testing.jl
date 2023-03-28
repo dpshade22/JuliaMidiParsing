@@ -90,3 +90,7 @@ function reconstruct_midi_file(csv_file::String, midi_file::String)
     push!(file.tracks, track)
     writeMIDIFile(midi_file, file)
 end
+
+df = CSV.read("anomalous/alb_esp1.csv0.75.csv", DataFrame)
+
+println(count(!iszero, df.anomalies) / length(df.anomalies))
