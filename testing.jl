@@ -25,41 +25,60 @@ function find_midi_files(directory::String)
     return midi_files
 end
 
-function parse_midi_files(midi_dir::String, output_dir::String)
-    # Get a list of all the MIDI files in the directory
-    midi_files = find_midi_files(midi_dir)
-    # Loop through the MIDI files and parse them
-    for midi_file in midi_files
-        # Parse the MIDI file
-        midi_data = load(midi_file)
+function parse_midi_file(midi_file::String, output_dir::String)
+    if midi_file[end] == '/'
+        midi_file = midi_file[1:end-1]
+    end
 
-        # Initialize empty vectors to store the parsed data
-        track = midi_data.tracks[2]
+    # Parse the MIDI file
+    midi_data = load(midi_file)
 
-        notes = getnotes(track)
-        noteNames = []
-        velocities = []
-        times = []
+    # Initialize empty vectors to store the parsed data
+    noteNames = []
+    velocities = []
+    positions = []
+    durations = []
 
+    for track in midi_data.tracks
         # Loop through the MIDI events and extract the relevant data
+        notes = getnotes(track)
         for note in notes
             push!(noteNames, note.pitch)
             push!(velocities, note.velocity)
-            push!(times, note.duration)
+            push!(positions, note.position)
+            push!(durations, note.duration)
         end
+    end
 
-        # Construct a DataFrame from the parsed data
-        df = DataFrame(
-            note=noteNames,
-            velocity=velocities,
-            time=times
-        )
+    # Construct a DataFrame from the parsed data
+    df = DataFrame(
+        note=noteNames,
+        velocity=velocities,
+        position=positions,
+        duration=durations
+    )
 
-        # Write the DataFrame to a CSV file
-        csv_file = joinpath(output_dir, replace(basename(midi_file), ".mid" => ".csv"))
-        CSV.write(csv_file, df)
+    # Write the DataFrame to a CSV file
+    csvName = replace(basename(midi_file)[1:end-4], "." => "_") * ".csv"
+    csv_file = joinpath(output_dir, csvName)
+    CSV.write(csv_file, df)
+end
+
+function parse_midi_files(midi_dir::String, output_dir::String)
+    # Get a list of all the MIDI files in the directory
+    midi_files = find_midi_files(midi_dir)
+    midi_files = [replace(file, "\\" => "/") for file in midi_files]
+    # Loop through the MIDI files and parse them
+    for file in midi_files
+        try
+            parse_midi_file(file, output_dir)
+
+        catch e
+            println(e, file)
+        end
     end
 end
+
 
 function reconstruct_midi_file(csv_file::String, midi_file::String)
     # Read the CSV file into a DataFrame
@@ -67,17 +86,14 @@ function reconstruct_midi_file(csv_file::String, midi_file::String)
 
     # Convert the parsed data into Note objects
     notes = Notes()
-    time = 0
     for i in 1:size(df, 1)
         # Calculate the time since the last MIDI event
-        delta_time = round(Int, df.time[i])
 
         # Create a Note object for the note-on event
-        note = Note(df.note[i], df.velocity[i], time, delta_time)
+        note = Note(df.note[i], df.velocity[i], df.position[i], df.duration[i])
         push!(notes, note)
 
         # Update the time counter
-        time += delta_time
     end
 
     # Create a MIDI track from the Note objects
@@ -91,6 +107,57 @@ function reconstruct_midi_file(csv_file::String, midi_file::String)
     writeMIDIFile(midi_file, file)
 end
 
-df = CSV.read("anomalous/alb_esp1.csv0.75.csv", DataFrame)
+function add_synthetic_anomalies(csv_file::String, anomaly_percentage::Float64)
+    # Load the CSV file into a DataFrame
+    df = CSV.read(csv_file, DataFrame)
 
-println(count(!iszero, df.anomalies) / length(df.anomalies))
+    # Add a column to track anomalies
+    df.anomalies = zeros(Int64, size(df, 1))
+    
+    # Generate a matrix of deviations for each row
+    num_anomalies = round(Int, size(df, 1) * anomaly_percentage)
+    deviations = zeros(size(df))
+
+    indices = sample(1:size(df, 1), num_anomalies, replace=false)
+
+    # Generate random values for each column with the specified probability distributions
+    for idx in indices
+        deviations[idx, 1] = rand(vcat(-14:14, zeros(28)))
+        deviations[idx, 2] = rand(vcat(-40:-20, zeros(40), 20:40))
+        deviations[idx, 3] = rand(vcat(-500:-50, zeros(900), 50:500))
+        deviations[idx, 4] = rand(vcat(-100:-50, zeros(1000), 50:1000))
+    end
+
+    # Apply the deviations to the selected rows using broadcasting
+    df[indices, :] .= df[indices, :] .+ deviations[indices, :]
+
+    # Use the map function to count non-zero elements in each row of the selected indices of deviations
+    non_zero_counts = [length(findall(!iszero, row)) for row in eachrow(deviations[indices, :])]
+
+
+    # Assign the non_zero_counts to the anomalies column of the df DataFrame at the specified indices
+
+    df.anomalies[indices] .= non_zero_counts    
+    # Clamp the values between 0 and 127
+    df[!, Not([:position, :duration])] .= clamp.(df[!, Not([:position, :duration])], 0, 127)
+
+    # Write the DataFrame to the anomalous directory
+    csv_file_name = splitdir(csv_file)[end][1:end-4]
+    csv_output_file = joinpath("anomalous", "$csv_file_name" * "_" * "$anomaly_percentage.csv")
+
+    CSV.write(csv_output_file, df)
+end
+
+function add_anomalous_data(csvDir::String)
+    csv_files = readdir(csvDir)
+    for csv_file in csv_files
+        for anomaly_percentage in range(0.05; stop=0.95, step=0.05)
+            add_synthetic_anomalies(joinpath(csvDir, csv_file), anomaly_percentage)
+        end
+    end        
+end
+
+@time add_anomalous_data("assets/csvData")
+
+reconstruct_midi_file("assets/anomalous/[ajin_op]_yoru_wa_nemureru_kai_-__flumpool__fonzi_m__0.95.csv", "reconstruct_midi_file.mid")
+reconstruct_midi_file("assets/csvData/[ajin_op]_yoru_wa_nemureru_kai_-__flumpool__fonzi_m_.csv", "reconstruct_midi_file.mid")
