@@ -79,34 +79,6 @@ function parse_midi_files(midi_dir::String, output_dir::String)
     end
 end
 
-
-function reconstruct_midi_file(csv_file::String, midi_file::String)
-    # Read the CSV file into a DataFrame
-    df = CSV.read(csv_file, DataFrame)
-    df = df[!, [:note, :velocity, :position, :duration]]
-    # Convert the parsed data into Note objects
-    notes = Notes()
-    for i in 1:size(df, 1)
-        # Calculate the time since the last MIDI event
-
-        # Create a Note object for the note-on event
-        note = Note(df.note[i], df.velocity[i], df.position[i], df.duration[i])
-        push!(notes, note)
-
-        # Update the time counter
-    end
-
-    # Create a MIDI track from the Note objects
-    track = MIDITrack()
-    addnotes!(track, notes)
-    addtrackname!(track, "reconstructed track")
-
-    # Create a MIDI file from the track
-    file = MIDIFile()
-    push!(file.tracks, track)
-    writeMIDIFile(midi_file, file)
-end
-
 function add_synthetic_anomalies(csv_file::String, anomalous_dir::String, anomaly_percentage::Float64)
     # Load the CSV file into a DataFrame
     df = CSV.read(csv_file, DataFrame)
@@ -158,7 +130,37 @@ function add_anomalous_data(csv_dir::String, anomalous_dir::String)
     end
 end
 
-# @time add_anomalous_data("assets/csvData", "assets/anomalous")
 
-reconstruct_midi_file("assets/anomalous/[ajin_op]_yoru_wa_nemureru_kai_-__flumpool__fonzi_m__0.95.csv", "BAD.mid")
-reconstruct_midi_file("assets/csvData/[ajin_op]_yoru_wa_nemureru_kai_-__flumpool__fonzi_m_.csv", "GOOD.mid")
+function reconstruct_midi_file(csv_file::String, midi_file::String)
+    # Read the CSV file into a DataFrame
+    df = CSV.read(csv_file, DataFrame)
+    df = df[!, [:note, :velocity, :position, :duration]]
+    # Convert the parsed data into Note objects
+    notes = Notes()
+    for i in 1:size(df, 1)
+        # Calculate the time since the last MIDI event
+
+        # Create a Note object for the note-on event
+        note = Note(df.note[i], df.velocity[i], df.position[i], df.duration[i])
+        push!(notes, note)
+
+        # Update the time counter
+    end
+
+    # Create a MIDI track from the Note objects
+    track = MIDITrack()
+    addnotes!(track, notes)
+    addtrackname!(track, "reconstructed track")
+
+    # Create a MIDI file from the track
+    file = MIDIFile()
+    push!(file.tracks, track)
+    writeMIDIFile(midi_file, file)
+end
+
+
+
+
+# @time add_anomalous_data("assets/csvData", "assets/anomalous")
+# reconstruct_midi_file("assets/anomalous/Undertale - Megalovania_0.95.csv", "BAD.mid")
+# reconstruct_midi_file("assets/anomalous/Undertale - Megalovania_0.5.csv", "GOOD.mid")
